@@ -50,6 +50,23 @@ RUN git clone https://github.com/sergey-khl/bear_ide.git \
     && cd bear_ide \
     && ./install.sh
 
+# cuda stuff
+ARG CUDA_MAJOR_VERSION=12
+ARG CUDA_VERSION=12.1
+RUN wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2004/x86_64/cuda-keyring_1.0-1_all.deb && \
+    dpkg -i cuda-keyring_1.0-1_all.deb && \
+    apt-get update && \
+    apt-get install -y cuda-toolkit-12-1
+RUN git clone https://github.com/NVIDIA/cub.git /opt/cub
+
+ENV CUB_HOME=/opt/cub
+ENV CUDA_HOME=/usr/local/cuda-$CUDA_VERSION
+RUN ln -s /usr/local/cuda-$CUDA_VERSION /usr/local/cuda
+ENV PATH=$CUDA_HOME/bin:$PATH
+ENV LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
+ENV FORCE_CUDA=1
+ENV TORCH_CUDA_ARCH_LIST="6.0 6.1 7.0 7.5 8.0 8.6+PTX 8.9"
+
 RUN echo "export LD_LIBRARY_PATH=/usr/local/lib:\$LD_LIBRARY_PATH" >> ~/.bashrc
 RUN echo "source /opt/ros/humble/setup.bash" >> ~/.bashrc
 RUN echo "alias die='tmux kill-session'" >> ~/.bashrc
@@ -58,7 +75,7 @@ RUN echo "source /home/user/wam-ros2-docker/wam_ws/install/setup.bash" >> ~/.bas
 
 # formats terminal to look normal, but with a red (fr3-docker) prefix to indicate docker environment
 RUN sed -i 's/#force_color_prompt=yes/force_color_prompt=yes/' ~/.bashrc
-RUN echo "export PS1='\[\e[1;31m\](wam-docker) \e[1;32m\]\u@\h\[\e[0m\]:\[\e[1;34m\]\w\[\e[0m\]\$ '" >> /root/.bashrc
+RUN echo "export PS1='\[\e[1;31m\](wam-docker-cuda) \e[1;32m\]\u@\h\[\e[0m\]:\[\e[1;34m\]\w\[\e[0m\]\$ '" >> /root/.bashrc
 
 # Build alis
 RUN echo "alias build_ros='colcon build --symlink-install --cmake-args -DCMAKE_EXPORT_COMPILE_COMMANDS=ON'" >> /root/.bashrc

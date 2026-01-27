@@ -1,0 +1,27 @@
+version: "3.8"
+services:
+  wam-ros2-docker:
+    image: wam-ros2-docker:${USER}
+    container_name: wam-ros2-docker
+    working_dir: /home/user/wam-ros2-docker
+    build:
+      context: .
+      dockerfile: Dockerfile.cuda
+      network: host
+    network_mode: host
+    tty: true
+    stdin_open: true
+    privileged: true
+    environment:
+      - DISPLAY=${DISPLAY}
+    volumes:
+      # - /home/${USER}/.config/barrett:/etc/barrett
+      - ../wam-ros2-docker:/home/user/wam-ros2-docker
+      - /tmp/.X11-unix:/tmp/.X11-unix
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
