@@ -1,5 +1,3 @@
-from time import time
-
 import numpy as np
 import rclpy
 from geometry_msgs.msg import Point, Pose, PoseStamped, Quaternion
@@ -55,6 +53,17 @@ class WamXboxControl(Node):
 
         self.joy = None
         self.current_pose = None
+        self.demo_start = np.array(
+            [
+                0.008692557798018632,
+                0.3442632989449545,
+                -0.03439152906740131,
+                2.350058567040802,
+                0.08255030631714483,
+                0.2555580364147625,
+                -0.25552647149843205,
+            ]
+        )
 
         qos_fast = QoSProfile(
             reliability=ReliabilityPolicy.RELIABLE,
@@ -83,6 +92,15 @@ class WamXboxControl(Node):
         self.get_logger().info("Xbox Control Node Started. Listening for xbox input...")
 
         self.grip_width = 0.08
+        self.drift_error = 0.02
+        self.move_future = None # used to see if static moves finish
+
+        # static moving clients
+        self.joint_move_client = self.create_client(
+            JointMove, "/wam/moveToJointPosition"
+        )
+        self.home_client = self.create_client(Trigger, "/wam/moveHome")
+        
 
     def joy_callback(self, msg):
         self.joy = msg
@@ -90,7 +108,59 @@ class WamXboxControl(Node):
     def pose_callback(self, msg: PoseStamped):
         self.current_pose = msg.pose
 
-    def control_loop(self):
+    # non realtime way of moving joints
+    def go_demo_start(self):
+        self.get_logger().info("move to demo start")
+        while not self.joint_move_client.wait_for_service(timeout_sec=1.0):
+            self.get_logger().info("Waiting for joint_move service...")
+
+        request = JointMove.Request()
+        angles_msg = JointState()
+        angles_msg.position = self.demo_start.tolist()
+        request.joint_state = angles_msg
+        request.blocking = True
+
+        return self.joint_move_client.call_async(request)
+
+    def go_home(self):
+        self.get_logger().info("going home")
+        while not self.home_client.wait_for_service(timeout_sec=1.0):
+            self.get_logger().info("Waiting for home service...")
+        request = Trigger.Request()
+        return self.home_client.call_async(request)
+
+    def send_cart_pose_rt(
+        self,
+        pose: list | np.ndarray,
+        position_rate_limit=[0.05] * 3,
+        orientation_rate_limit=[0.15] * 4,
+    ):
+        if isinstance(pose, list):
+            pose = np.array(pose)
+
+        assert len(pose) == 7
+
+
+        msg = RTCartPose()
+        msg.point = Point(x=pose[0], y=pose[1], z=pose[2])
+        msg.orientation = Quaternion(x=pose[3], y=pose[4], z=pose[5], w=pose[6])
+
+        # NOTE: these rate limits do seem to work. These values are not extensively tested though.
+        msg.position_rate_limits = position_rate_limit
+        msg.orientation_rate_limits = orientation_rate_limit
+
+        self.get_logger().info(f"Publishing EULER: {str(msg.orientation)}")
+        self.get_logger().info(
+            f"Publishing EULER: {str(msg.point.x)}, {str(msg.point.y)}, {str(msg.point.z)}"
+        )
+        self.get_logger().info(
+            f"curre pose: {str(self.current_pose)}"
+        )
+
+        self.pub_cart_pos.publish(msg)
+
+    def move_with_xbox(self):
+        # not initialized yet
         if not self.joy or not self.current_pose:
             return
 
@@ -103,6 +173,10 @@ class WamXboxControl(Node):
         yaw = self.joy.axes[3] * 0.1
         pitch = self.joy.axes[4] * 0.1
         roll = (self.joy.buttons[1] - self.joy.buttons[2]) * 0.1  # B(1) - X(2)
+
+
+        if not np.any(np.abs([x, y, z, yaw, pitch, roll]) >= self.drift_error):
+            return
 
         # TODO: probably can do only one conversion by doing everything in
         # quaternion space?
@@ -118,27 +192,32 @@ class WamXboxControl(Node):
         target_rpy = curr_rpy + np.array([roll, pitch, yaw])
         target_quat = Rotation.from_euler("xyz", target_rpy).as_quat()
 
-        LINEAR_GAIN = 1 / 10
-        target_xyz = Point()
-        target_xyz.x = self.current_pose.position.x + LINEAR_GAIN * x
-        target_xyz.y = self.current_pose.position.y + LINEAR_GAIN * y
-        target_xyz.z = self.current_pose.position.z + LINEAR_GAIN * z
-        target = RTCartPose()
-        target.orientation = Quaternion(
-            x=target_quat[0],
-            y=target_quat[1],
-            z=target_quat[2],
-            w=target_quat[3],
-        )
-        target.point = target_xyz
-        target.orientation_rate_limits = [0.15, 0.15, 0.15, 0.15]
-        target.position_rate_limits = [0.05, 0.05, 0.05]
+        LINEAR_GAIN = 1 / 5
+        target_xyz = [self.current_pose.position.x + LINEAR_GAIN * x, self.current_pose.position.y + LINEAR_GAIN * y, self.current_pose.position.z + LINEAR_GAIN * z]
 
-        self.get_logger().info(f"Publishing EULER: {target_rpy}")
-        self.get_logger().info(
-            f"Publishing EULER: {target_xyz.x}, {target_xyz.y}, {target_xyz.z}"
-        )
-        self.pub_cart_pos.publish(target)
+        pose = [*target_xyz, *target_quat] 
+
+        self.send_cart_pose_rt(pose)
+
+    def control_loop(self):
+        # not initialized yet
+        if not self.joy or not self.current_pose:
+            return
+
+        # wait until non rt control is complete
+        if self.move_future is not None:
+            if self.move_future.done():
+                self.move_future = None
+            else:
+                return
+
+        # dpad and start/select/home buttons act as on_press and not press_and_hold actions
+        if self.joy.axes[7] == 1:
+            self.move_future = self.go_demo_start()
+        elif self.joy.axes[7] == -1:
+            self.move_future = self.go_home()
+        else:
+            self.move_with_xbox()
 
         # NOTE: below is velocity control: it does work, but the orientation control
         # is very slow to react, not really sure why. Perhaps gains are bad somewhere,
