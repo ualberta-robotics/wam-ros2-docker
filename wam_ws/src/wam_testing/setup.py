@@ -24,6 +24,7 @@ setup(
     entry_points={
         "console_scripts": [
             "wam_test = wam_testing.wam_test:main",
+            "wam_dmp = wam_testing.wam_dmp:main",
         ],
     },
 )

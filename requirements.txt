@@ -6,3 +6,4 @@ unzip==1.0.0
 tqdm
 h5py
 fpsample
+movement_primitives[all]

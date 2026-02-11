@@ -1,5 +1,6 @@
 import numpy as np
 import rclpy
+from rclpy.qos_event import PublisherEventCallbacks
 import scipy
 from geometry_msgs.msg import Point, Pose, Quaternion
 from rclpy.duration import Duration
@@ -70,7 +71,7 @@ class WamTestNode(Node):
             RTJointVelocities, "/wam/RTJointVelocityCMD", 10
         )
         self.jnt_pos_pub = self.create_publisher(
-            RTJointPositions, "/wam/RTJointPositionCMD", 10
+                RTJointPositions, "/wam/RTJointPositionCMD", 10
         )
         self.cart_pos_rt_pub = self.create_publisher(
             RTCartPose, "/wam/RTCartPoseCMD", 10
@@ -210,9 +211,11 @@ def main(args=None):
             -0.25552647149843205,
         ]
     )
+    # start for il
     wam_test_node.send_joint_move(test_jnt_pos)
+      # home
+    # wam_test_node.go_home()
 
-    # wam_test_node.get_clock().sleep_for(Duration(seconds=0.5))
 
     test_jnt_pos2 = np.array(
         [
@@ -225,6 +228,10 @@ def main(args=None):
             -0.25552647149843205,
         ]
     )
+    # wam_test_node.send_joint_move(test_jnt_pos2)
+
+    # wam_test_node.get_clock().sleep_for(Duration(seconds=0.5))
+
     # wam_test_node.send_joint_move_block(test_jnt_pos2)
 
     # for i in range(5):
@@ -233,8 +240,14 @@ def main(args=None):
 
     # for i in range(5):
     #     wam_test_node.get_clock().sleep_for(Duration(seconds=0.2))
-    #     wam_test_node.send_joint_pos(test_jnt_pos2)
+    #
+    #     wam_test_node.send_joint_pos(test_jnt_pos)
 
+    # while True:
+    #     wam_test_node.get_clock().sleep_for(Duration(seconds=0.01))
+    #
+    #     wam_test_node.send_joint_pos(test_jnt_pos)
+    
     # for i in range(5):
     #     test_jnt_vels = np.array([0.1, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
     #     wam_test_node.send_joint_vels(test_jnt_vels)
